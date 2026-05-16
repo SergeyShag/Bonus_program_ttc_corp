@@ -1,7 +1,13 @@
 # ============================================================
 # ПРОГРАММА ПРЕМИРОВАНИЯ — B2B И ГСФ
-# Версия: 1.2 (май 2026)
+# Версия: 2.1-draft (май 2026) — PRE-VALIDATION
 # Документ: СЛЗ 154168 от 31.03.2026
+# Источник: таблица КПЭ (Google Sheets, 30 должностей)
+# ------------------------------------------------------------
+# СТАТУС: черновик до завершения человеческого стресс-теста.
+#   Файл предназначен для проверки вычислимости модели
+#   (сходимость арифметики, отсутствие деления на ноль),
+#   а не для предъявления как утверждённая программа.
 # ============================================================
 #
 # Логика весов КПЭ Типа 1:
@@ -9,13 +15,25 @@
 #   Сумма весов всех КПЭ Типа 1 в карточке должности = base_bonus_rate.
 #   Формула выплаты по одному КПЭ Типа 1:
 #     payout = оклад × вес × коэффициент_шкалы
-#   (БРП в формулу не входит — он уже зашит в веса.)
 #
-# Шкала-корректор для КПЭ Типа 2 работает как условие допуска:
-#   коэффициент = 0 → сдельная по этому КПЭ не начисляется;
+# Шкала-корректор для КПЭ Типа 2 — условие допуска:
+#   коэффициент = 0 → сдельная не начисляется;
 #   коэффициент > 0 → начисляется в полном размере по rate_formula.
 #
 # Условие выплаты для КПЭ Типа 3: 100% оплата начислений клиентом.
+#
+# КПЭ К1 (по компании / по филиалу): в таблице шкала не задана.
+#   Решение для симуляции v2.1: К1 принимается выполненным на 100 %.
+#   В карточках задан scale: null + fixed_coefficient: 1.0 —
+#   премия по К1 начисляется полностью (оклад × вес × 1.0).
+#   Это ВРЕМЕННАЯ заглушка до определения шкалы К1.
+#   ВАЖНО для Монте-Карло: когда шкала К1 будет определена,
+#   процент выполнения К1 по компании — общий параметр,
+#   разыгрывается ОДИН РАЗ на прогон; К1 по филиалу — раз на филиал.
+#
+# Сдельные ставки заданы ЛИНЕЙНО (как в действующей таблице).
+#   Гиперболическая модель (0.7*K/(K+S)) в этот файл НЕ зашита —
+#   она моделируется отдельным сценарием симулятора.
 # ============================================================
 
 
@@ -71,7 +89,7 @@ service_lists:
     items:
       - ВАТС (виртуальная АТС)
       - Wi-Fi для гостей
-      - Видеомониторинг / Безопасный двор
+      - Видеонаблюдение
       - IP-домофония
 
   standard_services:
@@ -100,40 +118,53 @@ kpi_types:
   type_2:
     name: Сдельная оплата от прироста регулярных начислений
     basis: Сумма прироста регулярных начислений по конкретной сделке
-    payout_formula: ставка(S) × S
+    payout_formula: ставка × S
     note: >
       S — прирост регулярных начислений по конкретной сделке.
-      Шкала-корректор используется как условие допуска.
+      Шкала-корректор (если задана) используется как условие допуска.
 
   type_3:
     name: Сдельная оплата за разовые сделки
     basis: Единовременные начисления / фактическая наценка / маржа
-    payout_formula: ставка(S) × S
+    payout_formula: ставка × S [+ фикс. часть]
     note: Условие выплаты — 100% оплата соответствующих начислений клиентом.
+
+  type_4:
+    name: Сдельная оплата от возвращённой клиентской задолженности
+    basis: Сумма возвращённой клиентской задолженности
+    payout_formula: ставка × S
+    note: >
+      Введён под должность «Специалист группы контроля клиентской
+      задолженности». Шкала scale_4 указана в таблице — требует
+      уточнения роли (корректор или условие допуска).
 
 
 # ============================================================
-# СПРАВОЧНИК 4. ШАБЛОНЫ КПЭ (canonical имена + display names)
-# Расчётный движок использует canonical_name; HR видит display_name.
+# СПРАВОЧНИК 4. КАТАЛОГ КПЭ (canonical + display names)
 # ============================================================
 
 kpi_catalog:
 
   # ----- ТИП 1 -----
 
+  plan_company_k1:
+    canonical_name: За выполнение показателя К1 по компании
+    display_name: За выполнение показателя К1 по компании
+    type: type_1
+
+  plan_branch_k1:
+    canonical_name: За выполнение показателя К1 по филиалу
+    display_name: За выполнение показателя К1 по филиалу
+    type: type_1
+
   plan_branch_total_accruals:
     canonical_name: За выполнение плана филиала по суммарным начислениям от клиентов
     display_name: За выполнение плана филиала/ов по суммарным начислениям от клиентов
     type: type_1
 
-  plan_branch_growth:
-    canonical_name: За выполнение плана филиала по приросту регулярных начислений от клиентов
-    display_name: За выполнение плана филиала/ов по приросту регулярных начислений от клиентов
-    type: type_1
-
-  plan_individual_growth:
-    canonical_name: За выполнение индивидуального плана по приросту регулярных начислений от закреплённых клиентов
-    display_name: За выполнение индивидуального плана по приросту регулярных начислений от закреплённых клиентов
+  plan_growth:
+    canonical_name: За выполнение плана по приросту регулярных начислений
+    display_name: За выполнение плана по приросту регулярных начислений
     type: type_1
 
   plan_dz_turnover:
@@ -141,20 +172,10 @@ kpi_catalog:
     display_name: За непревышение нормативного значения коэффициента оборачиваемости (КО) дебиторской задолженности
     type: type_1
 
-  plan_company_k1:
-    canonical_name: За выполнение показателя К1 по компании
-    display_name: За выполнение показателя К1 по компании
-    type: type_1
-
   # ----- ТИП 2 -----
 
-  growth_standard_existing:
-    canonical_name: За прирост регулярных начислений по всем услугам, кроме приоритетных (существующие клиенты)
-    display_name: За прирост регулярных начислений по всем услугам, кроме приоритетных
-    type: type_2
-
-  growth_standard_new:
-    canonical_name: За прирост регулярных начислений по всем услугам, кроме приоритетных (новые клиенты)
+  growth_standard:
+    canonical_name: За прирост регулярных начислений по всем услугам, кроме приоритетных
     display_name: За прирост регулярных начислений по всем услугам, кроме приоритетных
     type: type_2
 
@@ -163,9 +184,24 @@ kpi_catalog:
     display_name: За прирост регулярных начислений по приоритетным услугам
     type: type_2
 
+  growth_outbound:
+    canonical_name: За прирост регулярных начислений по исходящим продажам по всем услугам, кроме приоритетных
+    display_name: За прирост регулярных начислений по исходящим продажам по всем услугам, кроме приоритетных
+    type: type_2
+
+  growth_inbound:
+    canonical_name: За прирост регулярных начислений по входящим продажам по всем услугам, кроме приоритетных
+    display_name: За прирост регулярных начислений по входящим продажам по всем услугам, кроме приоритетных
+    type: type_2
+
   growth_otm_gras:
     canonical_name: За прирост регулярных начислений по всем услугам, привлечённым ОТМ и ГРАС
     display_name: За прирост регулярных начислений по всем услугам, привлечённым ОТМ, ГРАС
+    type: type_2
+
+  growth_manager_3k_4k:
+    canonical_name: За прирост регулярных начислений по всем услугам, привлечённым менеджером 3К и 4К
+    display_name: За прирост регулярных начислений по всем услугам, привлечённым менеджером 3К, 4К
     type: type_2
 
   # ----- ТИП 3 -----
@@ -205,344 +241,400 @@ kpi_catalog:
     display_name: За единовременные начисления от услуги «Выбор красивого номера»
     type: type_3
 
+  # ----- ТИП 4 -----
+
+  dz_return:
+    canonical_name: За возврат клиентской задолженности
+    display_name: За возврат клиентской задолженности
+    type: type_4
+
 
 # ============================================================
-# СПРАВОЧНИК 5. ОБЩИЕ БЛОКИ КПЭ (для повторного использования)
+# СПРАВОЧНИК 5. ОБЩИЕ БЛОКИ КПЭ (якоря для повторного использования)
 # ============================================================
 
 kpi_blocks:
 
-  # Стандартный блок Типа 2 — продажа услуг
-  block_sales_t2: &block_sales_t2
-    - id: kpi_t2_standard_existing
-      kpi_ref: growth_standard_existing
-      client_status: существующий
+  # --- Полный сдельный блок Типа 2 (продажи: станд. + приоритет) ---
+  # Ставки 70/150 — стандартный набор «продающих» должностей.
+  block_t2_sales_70_150: &block_t2_sales_70_150
+    - id: kpi_t2_standard
+      kpi_ref: growth_standard
       services: standard_services
-      rate_formula: "0.75 * 60000 / (60000 + S)"
+      rate: 0.70
+      rate_formula: "0.70 * S"
       scale: scale_1
       scale_role: условие_допуска
       exclusions:
         - Услуги временного или срочного характера (срок 1–3 месяца)
-
-    - id: kpi_t2_standard_new
-      kpi_ref: growth_standard_new
-      client_status: новый
-      services: standard_services
-      rate_formula: "1.05 * 60000 / (60000 + S)"
-      scale: scale_1
-      scale_role: условие_допуска
-      exclusions:
-        - Услуги временного или срочного характера (срок 1–3 месяца)
-
     - id: kpi_t2_priority
       kpi_ref: growth_priority
-      client_status: новый и существующий
       services: priority_services
-      rate_formula: "1.50 * 60000 / (60000 + S)"
+      rate: 1.50
+      rate_formula: "1.50 * S"
+      scale: null
+      scale_role: не применяется
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
+
+  # --- Сдельный блок Типа 2 для сопровождения 4К/развития 4К ---
+  # Ставки 45/150.
+  block_t2_sales_45_150: &block_t2_sales_45_150
+    - id: kpi_t2_standard
+      kpi_ref: growth_standard
+      services: standard_services
+      rate: 0.45
+      rate_formula: "0.45 * S"
       scale: scale_1
       scale_role: условие_допуска
       exclusions:
         - Услуги временного или срочного характера (срок 1–3 месяца)
+    - id: kpi_t2_priority
+      kpi_ref: growth_priority
+      services: priority_services
+      rate: 1.50
+      rate_formula: "1.50 * S"
+      scale: null
+      scale_role: не применяется
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
 
-  # Сдельный канал ОТМ/ГРАС (только для сопровождения)
-  block_otm_gras: &block_otm_gras
+  # --- Руководительский сдельный блок Типа 2 (символические ставки) ---
+  # Только приоритетные услуги, ставка 10 %.
+  block_t2_head_priority_10: &block_t2_head_priority_10
+    - id: kpi_t2_priority
+      kpi_ref: growth_priority
+      services: priority_services
+      rate: 0.10
+      rate_formula: "0.10 * S"
+      scale: null
+      scale_role: не применяется
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
+
+  # --- Руководительский сдельный блок Типа 2, ставка 7,5 % ---
+  # Стандартные + приоритетные услуги, единая ставка 7,5 %.
+  block_t2_head_75: &block_t2_head_75
+    - id: kpi_t2_standard
+      kpi_ref: growth_standard
+      services: standard_services
+      rate: 0.075
+      rate_formula: "0.075 * S"
+      scale: null
+      scale_role: не применяется
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
+    - id: kpi_t2_priority
+      kpi_ref: growth_priority
+      services: priority_services
+      rate: 0.075
+      rate_formula: "0.075 * S"
+      scale: null
+      scale_role: не применяется
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
+
+  # --- Руководительский сдельный блок Типа 2, ставка 1,5 % ---
+  # Стандартные + приоритетные услуги, единая ставка 1,5 %.
+  block_t2_head_15: &block_t2_head_15
+    - id: kpi_t2_standard
+      kpi_ref: growth_standard
+      services: standard_services
+      rate: 0.015
+      rate_formula: "0.015 * S"
+      scale: null
+      scale_role: не применяется
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
+    - id: kpi_t2_priority
+      kpi_ref: growth_priority
+      services: priority_services
+      rate: 0.015
+      rate_formula: "0.015 * S"
+      scale: null
+      scale_role: не применяется
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
+
+  # --- Канал ОТМ/ГРАС, ставка 15 % ---
+  block_t2_otm_gras_15: &block_t2_otm_gras_15
     - id: kpi_t2_otm_gras
       kpi_ref: growth_otm_gras
       services: standard_services
-      rate_formula: "0.35 * 60000 / (60000 + S)"
+      rate: 0.15
+      rate_formula: "0.15 * S"
       scale: null
       scale_role: не применяется
       note: ОТМ — отдел телемаркетинга; ГРАС — группа развития абонентской сети.
       exclusions:
         - Услуги временного или срочного характера (срок 1–3 месяца)
 
-  # Стандартный блок Типа 3 — разовые сделки
-  block_one_time_t3: &block_one_time_t3
+  # --- Канал ОТМ/ГРАС, ставка 30 % ---
+  block_t2_otm_gras_30: &block_t2_otm_gras_30
+    - id: kpi_t2_otm_gras
+      kpi_ref: growth_otm_gras
+      services: standard_services
+      rate: 0.30
+      rate_formula: "0.30 * S"
+      scale: null
+      scale_role: не применяется
+      note: ОТМ — отдел телемаркетинга; ГРАС — группа развития абонентской сети.
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
+
+  # --- Канал «привлечено менеджером 3К/4К», ставка 15 % ---
+  block_t2_mgr3k4k_15: &block_t2_mgr3k4k_15
+    - id: kpi_t2_manager_3k_4k
+      kpi_ref: growth_manager_3k_4k
+      services: standard_services
+      rate: 0.15
+      rate_formula: "0.15 * S"
+      scale: null
+      scale_role: не применяется
+      exclusions:
+        - Услуги временного или срочного характера (срок 1–3 месяца)
+
+  # --- Полный сдельный блок Типа 3 (продающие должности) ---
+  # Ставки 5/5/4/4/4/8 + красивый номер 5 %.
+  block_t3_full: &block_t3_full
     - id: kpi_t3_connection
       kpi_ref: one_time_connection
       basis: единовременные начисления
       rate_formula: "0.05 * S"
       payment_condition: 100% оплата клиентом
-
     - id: kpi_t3_temp_works
       kpi_ref: one_time_temp_works
       basis: единовременные начисления
       rate_formula: "0.05 * S"
       payment_condition: 100% оплата клиентом
       distribution: может быть распределено на Проектную группу
-
     - id: kpi_t3_equipment_supply
       kpi_ref: one_time_equipment_supply
       basis: фактическая наценка
       rate_formula: "0.04 * S"
       payment_condition: 100% оплата клиентом
       distribution: может быть распределено на Проектную группу
-
     - id: kpi_t3_equipment_order
       kpi_ref: one_time_equipment_order
       basis: фактическая наценка
       rate_formula: "0.04 * S"
       payment_condition: 100% оплата клиентом
       distribution: может быть распределено на Проектную группу
-
     - id: kpi_t3_otv
       kpi_ref: one_time_otv
       basis: единовременные начисления
-      rate_formula: "0.03 * S + 4000"
+      rate_formula: "0.04 * S"
       payment_condition: 100% оплата клиентом
       distribution: может быть распределено на Проектную группу
-
     - id: kpi_t3_construction
       kpi_ref: one_time_construction
       basis: маржа (договорная цена минус плановые затраты на строительство и оборудование)
-      rate_formula: "0.06 * S + 4000"
+      rate_formula: "0.08 * S"
       payment_condition: 100% оплата клиентом
       distribution: может быть распределено на Проектную группу
-
     - id: kpi_t3_beautiful_number
       kpi_ref: one_time_beautiful_number
       basis: единовременные начисления
       rate_formula: "0.05 * S"
       payment_condition: 100% оплата клиентом
 
+  # --- Руководительский сдельный блок Типа 3 ---
+  # Только ОТВ (1 %) и СМР (2 %), пониженные ставки.
+  block_t3_head: &block_t3_head
+    - id: kpi_t3_otv
+      kpi_ref: one_time_otv
+      basis: единовременные начисления
+      rate_formula: "0.01 * S"
+      payment_condition: 100% оплата клиентом
+      distribution: может быть распределено на Проектную группу
+    - id: kpi_t3_construction
+      kpi_ref: one_time_construction
+      basis: маржа (договорная цена минус плановые затраты на строительство и оборудование)
+      rate_formula: "0.02 * S"
+      payment_condition: 100% оплата клиентом
+      distribution: может быть распределено на Проектную группу
+
 
 # ============================================================
-# КАРТОЧКИ ДОЛЖНОСТЕЙ
+# КАРТОЧКИ ДОЛЖНОСТЕЙ (порядок — как в листе «Порядок должностей»)
 # ============================================================
 
 positions:
 
-  # ================================================================
-  manager_development:
-    name: Менеджер по развитию
-    base_bonus_rate: 0.0
-    applies_to:
-      - Ведущий менеджер по продажам
-      - Менеджер по продажам крупному бизнесу
-      - Менеджер по работе с корпоративными клиентами
-      - Менеджер по продажам малому бизнесу
-    note: >
-      Плановый блок (Тип 1) не применяется — премия из сдельных составляющих.
-      КТУ (К4) временно выведен за рамки модели.
-
-    kpi:
-      # ----- Тип 2 -----
-      - *block_sales_t2
-
-      # ----- Тип 3 -----
-      - *block_one_time_t3
-
-
-  # ================================================================
-  manager_support:
-    name: Менеджер по сопровождению
-    base_bonus_rate: 0.50
-    note: >
-      Базовый размер премии — 50% оклада.
-      Плановый блок: сумма весов = 0.50.
-      Сдельная часть начисляется сверх планового блока.
-
-    kpi:
-
-      # ----- Тип 1 -----
-
-      - id: kpi_t1_branch_total_accruals
-        kpi_ref: plan_branch_total_accruals
-        weight: 0.20
-        scale: scale_2
-        scope:
-          branch: свой филиал
-          client_segment: [МСБ, 3К, 4К, ГСФ, ГСУ]
-          client_status: любой
-          client_group: любые клиенты
-        note: нарастающим итогом с начала года
-
-      - id: kpi_t1_dz_turnover
-        kpi_ref: plan_dz_turnover
-        weight: 0.10
-        scale: scale_3
-        scope:
-          branch: свой филиал
-          client_segment: [МСБ, 3К, ГСФ]
-          client_status: любой
-          client_group: закреплённые клиенты
-
-      - id: kpi_t1_individual_growth
-        kpi_ref: plan_individual_growth
-        weight: 0.20
-        scale: scale_2
-        scope:
-          branch: свой филиал
-          client_segment: [МСБ, 3К, ГСФ]
-          client_status: существующий
-          client_group: закреплённые клиенты
-
-      # ----- Тип 2 -----
-      - *block_sales_t2
-      - *block_otm_gras
-
-      # ----- Тип 3 -----
-      - *block_one_time_t3
-
-
-  # ================================================================
-  head_of_corp_division_branch:
-    name: Начальник управления по работе с корпоративными клиентами филиала
-    base_bonus_rate: 1.00
-    note: >
-      Базовый размер премии — 100% оклада.
-      Премия только из планового блока (Тип 1).
-
-    kpi:
-
-      - id: kpi_t1_company_k1
-        kpi_ref: plan_company_k1
-        weight: 0.10
-        scale: null
-        note: Шкала уточняется
-
-      - id: kpi_t1_branch_total_accruals
-        kpi_ref: plan_branch_total_accruals
-        weight: 0.40
-        scale: scale_2
-        scope:
-          branch: свой филиал
-          client_segment: [МСБ, 3К, 4К, ГСФ, ГСУ]
-          client_status: любой
-          client_group: любые клиенты
-        note: нарастающим итогом с начала года
-
-      - id: kpi_t1_branch_growth
-        kpi_ref: plan_branch_growth
-        weight: 0.35
-        scale: scale_2
-        scope:
-          branch: свой филиал
-          client_segment: [МСБ, 3К, ГСФ]
-          client_status: любой
-          client_group: любые клиенты
-
-      - id: kpi_t1_dz_turnover
-        kpi_ref: plan_dz_turnover
-        weight: 0.15
-        scale: scale_3
-        scope:
-          branch: свой филиал
-          client_segment: [МСБ, 3К, ГСФ]
-          client_status: существующий
-          client_group: любые клиенты
-
-
-  # ================================================================
-  head_of_corp_development:
+  # === 1 ============================================================
+  head_corp_development:
     name: Начальник управления по развитию корпоративного сегмента
     base_bonus_rate: 0.50
-    note: Базовый размер премии — 50% оклада. Только плановый блок.
-
+    note: Только плановый блок. Σ весов Тип 1 = 0.50.
     kpi:
-
       - id: kpi_t1_company_k1
         kpi_ref: plan_company_k1
         weight: 0.10
         scale: null
-        note: Шкала уточняется
-
+        fixed_coefficient: 1.0   # К1: шкала не определена; временно зафиксирован коэффициент 1.0
       - id: kpi_t1_branch_total_accruals
         kpi_ref: plan_branch_total_accruals
         weight: 0.20
         scale: scale_2
         scope:
           branch: все филиалы
-          client_segment: [МСБ, 3К, 4К, ГСФ, ГСУ]
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
           client_status: любой
-          client_group: любые клиенты
         note: нарастающим итогом с начала года
-
-      - id: kpi_t1_branch_growth
-        kpi_ref: plan_branch_growth
-        weight: 0.20
-        scale: scale_2
+      - id: kpi_t1_growth_msb3k4k
+        kpi_ref: plan_growth
+        weight: 0.10
+        scale: scale_1
         scope:
           branch: все филиалы
-          client_segment: [МСБ, 3К, 4К, ГСФ, ГСУ]
+          client_segment: [МСБ, 3К, 4К]
           client_status: любой
-          client_group: любые клиенты
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.10
+        scale: scale_1
+        scope:
+          branch: все филиалы
+          client_segment: [ГСФ, ГСУ]
+          client_status: любой
 
-
-  # ================================================================
+  # === 2 ============================================================
   territorial_manager:
     name: Территориальный менеджер
     base_bonus_rate: 0.50
-    note: Базовый размер премии — 50% оклада. Только плановый блок.
-
+    note: Только плановый блок. Σ весов Тип 1 = 0.50.
     kpi:
-
       - id: kpi_t1_company_k1
         kpi_ref: plan_company_k1
-        weight: 0.10
+        weight: 0.05
         scale: null
-        note: Шкала уточняется
-
+        fixed_coefficient: 1.0   # К1: шкала не определена; временно зафиксирован коэффициент 1.0
       - id: kpi_t1_branch_total_accruals
         kpi_ref: plan_branch_total_accruals
         weight: 0.20
         scale: scale_2
         scope:
           branch: все филиалы
-          client_segment: [МСБ, 3К, 4К, ГСФ, ГСУ]
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
           client_status: любой
-          client_group: любые клиенты
         note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_msb3k4k
+        kpi_ref: plan_growth
+        weight: 0.125
+        scale: scale_1
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К, 4К]
+          client_status: любой
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.125
+        scale: scale_1
+        scope:
+          branch: все филиалы
+          client_segment: [ГСФ, ГСУ]
+          client_status: любой
 
-      - id: kpi_t1_branch_growth
-        kpi_ref: plan_branch_growth
-        weight: 0.20
+  # === 3 ============================================================
+  head_telemarketing:
+    name: Начальник отдела телемаркетинга
+    base_bonus_rate: 0.75
+    note: Только плановый блок. Σ весов Тип 1 = 0.75.
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.25
         scale: scale_2
         scope:
           branch: все филиалы
-          client_segment: [МСБ, 3К, 4К, ГСФ, ГСУ]
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
           client_status: любой
-          client_group: любые клиенты
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_all
+        kpi_ref: plan_growth
+        weight: 0.50
+        scale: scale_1
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
 
+  # === 4 ============================================================
+  manager_telesales:
+    name: Менеджер телефонных продаж
+    base_bonus_rate: 0.0
+    note: >
+      Плановый блок не применяется. Премия только из сдельных.
+      Прирост расщеплён на исходящие (70 %) и входящие (30 %)
+      продажи. Третья дублирующая строка таблицы устранена.
+    kpi:
+      # --- Тип 2 ---
+      - id: kpi_t2_growth_outbound
+        kpi_ref: growth_outbound
+        services: standard_services
+        rate: 0.70
+        rate_formula: "0.70 * S"
+        scale: scale_1
+        scale_role: условие_допуска
+        exclusions:
+          - Услуги временного или срочного характера (срок 1–3 месяца)
+      - id: kpi_t2_growth_inbound
+        kpi_ref: growth_inbound
+        services: standard_services
+        rate: 0.30
+        rate_formula: "0.30 * S"
+        scale: scale_1
+        scale_role: условие_допуска
+        exclusions:
+          - Услуги временного или срочного характера (срок 1–3 месяца)
+      - id: kpi_t2_priority
+        kpi_ref: growth_priority
+        services: priority_services
+        rate: 1.50
+        rate_formula: "1.50 * S"
+        scale: null
+        scale_role: не применяется
+        exclusions:
+          - Услуги временного или срочного характера (срок 1–3 месяца)
+      # --- Тип 3 ---
+      - *block_t3_full
 
-  # ================================================================
-  head_of_corp_support:
+  # === 5 ============================================================
+  head_corp_support:
     name: Начальник управления по сопровождению корпоративных клиентов
     base_bonus_rate: 0.50
-    note: >
-      Базовый размер премии — 50% оклада. Только плановый блок.
-      К1 имеет вес 0.15 (выше, чем у других руководящих должностей —
-      требует уточнения на более поздних этапах).
-
+    note: Только плановый блок. Σ весов Тип 1 = 0.50.
     kpi:
-
       - id: kpi_t1_company_k1
         kpi_ref: plan_company_k1
         weight: 0.15
         scale: null
-        note: Шкала уточняется
-
+        fixed_coefficient: 1.0   # К1: шкала не определена; временно зафиксирован коэффициент 1.0
       - id: kpi_t1_branch_total_accruals
         kpi_ref: plan_branch_total_accruals
         weight: 0.11
         scale: scale_2
         scope:
           branch: все филиалы
-          client_segment: [МСБ, 3К, 4К, ГСФ, ГСУ]
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
           client_status: любой
-          client_group: любые клиенты
         note: нарастающим итогом с начала года
-
-      - id: kpi_t1_branch_growth
-        kpi_ref: plan_branch_growth
-        weight: 0.12
-        scale: scale_2
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.06
+        scale: scale_1
         scope:
           branch: все филиалы
-          client_segment: [МСБ, 3К, ГСФ]
-          client_status: существующий
-          client_group: любые клиенты
-
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.06
+        scale: scale_1
+        scope:
+          branch: все филиалы
+          client_segment: [ГСФ]
+          client_status: любой
       - id: kpi_t1_dz_turnover
         kpi_ref: plan_dz_turnover
         weight: 0.12
@@ -551,33 +643,166 @@ positions:
           branch: все филиалы
           client_segment: [МСБ, 3К, ГСФ]
           client_status: существующий
-          client_group: любые клиенты
 
+  # === 6 ============================================================
+  specialist_corp_support:
+    name: Специалист управления по сопровождению корпоративных клиентов
+    base_bonus_rate: 0.50
+    note: Только плановый блок. Σ весов Тип 1 = 0.50.
+    kpi:
+      - id: kpi_t1_company_k1
+        kpi_ref: plan_company_k1
+        weight: 0.10
+        scale: null
+        fixed_coefficient: 1.0   # К1: шкала не определена; временно зафиксирован коэффициент 1.0
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.16
+        scale: scale_2
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.06
+        scale: scale_1
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.06
+        scale: scale_1
+        scope:
+          branch: все филиалы
+          client_segment: [ГСФ]
+          client_status: любой
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.12
+        scale: scale_3
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К, ГСФ]
+          client_status: существующий
 
-  # ================================================================
+  # === 7 ============================================================
+  head_dz_control:
+    name: Руководитель группы контроля клиентской задолженности корпоративных клиентов
+    base_bonus_rate: 0.50
+    note: Только плановый блок. Σ весов Тип 1 = 0.50.
+    kpi:
+      - id: kpi_t1_company_k1
+        kpi_ref: plan_company_k1
+        weight: 0.10
+        scale: null
+        fixed_coefficient: 1.0   # К1: шкала не определена; временно зафиксирован коэффициент 1.0
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.15
+        scale: scale_2
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.25
+        scale: scale_3
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К, ГСФ]
+          client_status: существующий
+
+  # === 8 ============================================================
+  specialist_dz_control:
+    name: Специалист группы контроля клиентской задолженности корпоративных клиентов
+    base_bonus_rate: 0.0
+    note: >
+      Плановый блок не применяется. Премия — сдельная Типа 4.
+      В таблице к КПЭ указана scale_4 — роль шкалы (корректор
+      или условие допуска) требует уточнения.
+    kpi:
+      - id: kpi_t4_dz_return
+        kpi_ref: dz_return
+        basis: сумма возвращённой клиентской задолженности
+        rate: 0.01
+        rate_formula: "0.01 * S"
+        scale: scale_4
+        scale_role: требует_уточнения
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+
+  # === 9 ============================================================
+  head_key_accounts:
+    name: Начальник отдела по работе с ключевыми корпоративными клиентами
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные Типа 3 начисляются сверх
+      планового блока по руководительским ставкам (ОТВ 1 %, СМР 2 %).
+    kpi:
+      # --- Тип 1 ---
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.15
+        scale: scale_2
+        scope:
+          branch: все филиалы
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_4k
+        kpi_ref: plan_growth
+        weight: 0.225
+        scale: scale_1
+        scope:
+          branch: все филиалы
+          client_segment: [4К]
+          client_status: любой
+      - id: kpi_t1_dz_turnover_4k
+        kpi_ref: plan_dz_turnover
+        weight: 0.125
+        scale: scale_3
+        scope:
+          branch: все филиалы
+          client_segment: [4К]
+          client_status: любой
+      # --- Тип 3 ---
+      - *block_t3_head
+
+  # === 10 ===========================================================
+  manager_development_4k:
+    name: Менеджер по развитию 4К
+    base_bonus_rate: 0.0
+    note: Плановый блок не применяется. Премия только из сдельных.
+    kpi:
+      - *block_t2_sales_45_150
+      - *block_t3_full
+
+  # === 11 ===========================================================
   manager_support_4k:
     name: Менеджер по сопровождению 4К
     base_bonus_rate: 0.50
     note: >
-      Базовый размер премии — 50% оклада.
-      Плановый блок: сумма весов = 0.50.
-      Сдельная часть начисляется сверх планового блока.
-
+      Плановый блок Σ = 0.50. Сдельные части (Тип 2, Тип 3)
+      начисляются сверх планового блока.
     kpi:
-
-      # ----- Тип 1 -----
-
+      # --- Тип 1 ---
       - id: kpi_t1_branch_total_accruals
         kpi_ref: plan_branch_total_accruals
         weight: 0.20
         scale: scale_2
         scope:
           branch: все филиалы
-          client_segment: [МСБ, 3К, 4К, ГСФ, ГСУ]
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
           client_status: любой
-          client_group: любые клиенты
         note: нарастающим итогом с начала года
-
       - id: kpi_t1_dz_turnover
         kpi_ref: plan_dz_turnover
         weight: 0.30
@@ -585,12 +810,723 @@ positions:
         scope:
           branch: все филиалы
           client_segment: [МСБ, 3К, ГСФ]
-          client_status: любой
+          client_status: существующий
           client_group: закреплённые клиенты
+      # --- Тип 2 ---
+      - *block_t2_sales_45_150
+      - *block_t2_mgr3k4k_15
+      # --- Тип 3 ---
+      - *block_t3_full
 
-      # ----- Тип 2 -----
-      - *block_sales_t2
-      - *block_otm_gras
+  # === 12 ===========================================================
+  head_corp_kk_branch_t100:
+    name: Начальник управления по работе с корпоративными клиентами филиала
+    tariff_group: t100
+    base_bonus_rate: 1.00
+    note: >
+      Тарифная группа с БРП 100 %. Только плановый блок.
+      Σ весов Тип 1 = 1.00. Парная карточка — head_corp_kk_branch_t50.
+    kpi:
+      - id: kpi_t1_branch_k1
+        kpi_ref: plan_branch_k1
+        weight: 0.10
+        scale: null
+        fixed_coefficient: 1.0   # К1: шкала не определена; временно зафиксирован коэффициент 1.0
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.40
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.15
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: любой
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.15
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ]
+          client_status: существующий
 
-      # ----- Тип 3 -----
-      - *block_one_time_t3
+  # === 13 ===========================================================
+  head_corp_kk_branch_t50:
+    name: Начальник управления по работе с корпоративными клиентами филиала
+    tariff_group: t50
+    base_bonus_rate: 0.50
+    note: >
+      Тарифная группа с БРП 50 %. Только плановый блок.
+      Σ весов Тип 1 = 0.50. Парная карточка — head_corp_kk_branch_t100.
+    kpi:
+      - id: kpi_t1_branch_k1
+        kpi_ref: plan_branch_k1
+        weight: 0.05
+        scale: null
+        fixed_coefficient: 1.0   # К1: шкала не определена; временно зафиксирован коэффициент 1.0
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.10
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.075
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: любой
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.075
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ]
+          client_status: существующий
+
+  # === 14 ===========================================================
+  head_sales_msb:
+    name: Начальник отдела продаж МСБ
+    base_bonus_rate: 0.80
+    note: >
+      Плановый блок Σ = 0.80. Сдельные части начисляются сверх
+      планового блока (приоритет 10 %, ОТВ 1 %, СМР 2 %).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.10
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_msb
+        kpi_ref: plan_growth
+        weight: 0.70
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ]
+          client_status: любой
+      - *block_t2_head_priority_10
+      - *block_t3_head
+
+  # === 15 ===========================================================
+  head_sales_3k_msb:
+    name: Начальник отдела продаж 3К и МСБ
+    base_bonus_rate: 0.80
+    note: >
+      Плановый блок Σ = 0.80. Сдельные части начисляются сверх
+      планового блока (приоритет 10 %, ОТВ 1 %, СМР 2 %).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.10
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.70
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - *block_t2_head_priority_10
+      - *block_t3_head
+
+  # === 16 ===========================================================
+  head_sales_3k:
+    name: Начальник отдела продаж 3К
+    base_bonus_rate: 0.80
+    note: >
+      Плановый блок Σ = 0.80. Сдельные части начисляются сверх
+      планового блока (приоритет 10 %, ОТВ 1 %, СМР 2 %).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.10
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_3k
+        kpi_ref: plan_growth
+        weight: 0.70
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [3К]
+          client_status: любой
+      - *block_t2_head_priority_10
+      - *block_t3_head
+
+  # === 17 ===========================================================
+  head_sales_support_chp:
+    name: Начальник отдела продаж и сопровождения (ЧП)
+    base_bonus_rate: 0.65
+    note: >
+      Плановый блок Σ = 0.65. Сдельные части начисляются сверх
+      планового блока (приоритет 10 %, ОТВ 1 %, СМР 2 %).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.15
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.215
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.21
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: любой
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.075
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ]
+          client_status: существующий
+      - *block_t2_head_priority_10
+      - *block_t3_head
+
+  # === 18 ===========================================================
+  manager_development:
+    name: Менеджер по развитию (менеджер по продажам)
+    base_bonus_rate: 0.0
+    note: >
+      Плановый блок не применяется. Премия только из сдельных.
+      Прирост по стандартным услугам расщеплён по статусу клиента:
+      новый — 70 %, существующий — 100 %.
+    kpi:
+      # --- Тип 2 ---
+      - id: kpi_t2_growth_standard_new
+        kpi_ref: growth_standard
+        services: standard_services
+        client_status: новый
+        rate: 0.70
+        rate_formula: "0.70 * S"
+        scale: scale_1
+        scale_role: условие_допуска
+        exclusions:
+          - Услуги временного или срочного характера (срок 1–3 месяца)
+      - id: kpi_t2_growth_standard_existing
+        kpi_ref: growth_standard
+        services: standard_services
+        client_status: существующий
+        rate: 1.00
+        rate_formula: "1.00 * S"
+        scale: scale_1
+        scale_role: условие_допуска
+        exclusions:
+          - Услуги временного или срочного характера (срок 1–3 месяца)
+      - id: kpi_t2_priority
+        kpi_ref: growth_priority
+        services: priority_services
+        rate: 1.50
+        rate_formula: "1.50 * S"
+        scale: null
+        scale_role: не применяется
+        exclusions:
+          - Услуги временного или срочного характера (срок 1–3 месяца)
+      # --- Тип 3 ---
+      - *block_t3_full
+
+  # === 19 ===========================================================
+  head_support_dept:
+    name: Начальник отдела сопровождения
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (Тип 2 по ставке 1,5 %, Тип 3 руководительский).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - *block_t2_head_15
+      - *block_t3_head
+
+  # === 20 ===========================================================
+  head_corp_dept_al:
+    name: Начальник отдела по работе с корпоративными клиентами (АЛ)
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (Тип 2 по ставке 1,5 %, Тип 3 руководительский).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ]
+          client_status: любой
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.10
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.10
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: любой
+      - *block_t2_head_15
+      - *block_t3_head
+
+  # === 21 ===========================================================
+  head_support_group_3k:
+    name: Руководитель группы сопровождения (3К)
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (каналы ОТМ/ГРАС и 3К/4К по 15 %, Тип 3 полный).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [3К]
+          client_status: существующий
+      - id: kpi_t1_growth_3k
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [3К]
+          client_status: любой
+      - *block_t2_otm_gras_15
+      - *block_t2_mgr3k4k_15
+      - *block_t3_full
+
+  # === 22 ===========================================================
+  head_support_group_msb:
+    name: Руководитель группы сопровождения (МСБ)
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (канал ОТМ/ГРАС 30 %, Тип 3 полный).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ]
+          client_status: существующий
+      - id: kpi_t1_growth_msb
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ]
+          client_status: любой
+      - *block_t2_otm_gras_30
+      - *block_t3_full
+
+  # === 23 ===========================================================
+  head_group_b2b:
+    name: Руководитель группы B2B
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (Тип 2 по ставке 7,5 %, Тип 3 полный).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: существующий
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+      - *block_t2_head_75
+      - *block_t3_full
+
+  # === 24 ===========================================================
+  head_group_b2g:
+    name: Руководитель группы B2G
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (Тип 2 по ставке 7,5 %, Тип 3 полный).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: существующий
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: любой
+      - id: kpi_t2_standard
+        kpi_ref: growth_standard
+        services: standard_services
+        rate: 0.075
+        rate_formula: "0.075 * S"
+        scale: scale_1
+        scale_role: условие_допуска
+        exclusions:
+          - Услуги временного или срочного характера (срок 1–3 месяца)
+      - id: kpi_t2_priority
+        kpi_ref: growth_priority
+        services: priority_services
+        rate: 0.075
+        rate_formula: "0.075 * S"
+        scale: null
+        scale_role: не применяется
+        exclusions:
+          - Услуги временного или срочного характера (срок 1–3 месяца)
+      - *block_t3_full
+
+  # === 25 ===========================================================
+  manager_support_msb:
+    name: Менеджер по сопровождению МСБ
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (Тип 2 продажи 70/150 + ОТМ/ГРАС 30 %, Тип 3 полный).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ]
+          client_status: существующий
+          client_group: закреплённые клиенты
+      - id: kpi_t1_growth_msb
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ]
+          client_status: существующий
+          client_group: закреплённые клиенты
+      - *block_t2_sales_70_150
+      - *block_t2_otm_gras_30
+      - *block_t3_full
+
+  # === 26 ===========================================================
+  manager_support_3k:
+    name: Менеджер по сопровождению 3К
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (каналы ОТМ/ГРАС и 3К/4К по 15 %, Тип 3 полный).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [3К]
+          client_status: существующий
+          client_group: закреплённые клиенты
+      - id: kpi_t1_growth_3k
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [3К]
+          client_status: существующий
+          client_group: закреплённые клиенты
+      - *block_t2_otm_gras_15
+      - *block_t2_mgr3k4k_15
+      - *block_t3_full
+
+  # === 27 ===========================================================
+  manager_sales_support:
+    name: Менеджер по продажам и сопровождению
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (Тип 2 продажи 70/150 + ОТМ/ГРАС 30 %, Тип 3 полный).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ]
+          client_status: существующий
+          client_group: закреплённые клиенты
+      - id: kpi_t1_growth_msb3kgsf
+        kpi_ref: plan_growth
+        weight: 0.20
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ]
+          client_status: существующий
+          client_group: закреплённые клиенты
+      - *block_t2_sales_70_150
+      - *block_t2_otm_gras_30
+      - *block_t3_full
+
+  # === 28 ===========================================================
+  specialist_admin_support:
+    name: Специалист-администратор отдела сопровождения
+    base_bonus_rate: 0.50
+    note: Только плановый блок. Σ весов Тип 1 = 0.50.
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.20
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_growth_msb3k
+        kpi_ref: plan_growth
+        weight: 0.30
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К]
+          client_status: любой
+
+  # === 29 ===========================================================
+  head_govsector_dept:
+    name: Начальник отдела по работе с госсектором
+    base_bonus_rate: 1.00
+    note: >
+      Плановый блок Σ = 1.00. Сдельные части начисляются сверх
+      планового блока (Тип 3 руководительский: ОТВ 1 %, СМР 2 %).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.45
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.10
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: существующий
+      - id: kpi_t1_growth_gsf
+        kpi_ref: plan_growth
+        weight: 0.45
+        scale: scale_1
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: любой
+      - *block_t3_head
+
+  # === 30 ===========================================================
+  manager_govsector:
+    name: Менеджер госсектора
+    base_bonus_rate: 0.50
+    note: >
+      Плановый блок Σ = 0.50. Сдельные части начисляются сверх
+      планового блока (Тип 2 продажи 70/150, Тип 3 полный).
+    kpi:
+      - id: kpi_t1_branch_total_accruals
+        kpi_ref: plan_branch_total_accruals
+        weight: 0.25
+        scale: scale_2
+        scope:
+          branch: свой филиал
+          client_segment: [МСБ, 3К, ГСФ, 4К, ГСУ]
+          client_status: любой
+        note: нарастающим итогом с начала года
+      - id: kpi_t1_dz_turnover
+        kpi_ref: plan_dz_turnover
+        weight: 0.25
+        scale: scale_3
+        scope:
+          branch: свой филиал
+          client_segment: [ГСФ]
+          client_status: существующий
+          client_group: закреплённые клиенты
+      - *block_t2_sales_70_150
+      - *block_t3_full
